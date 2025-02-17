@@ -21,9 +21,8 @@ class BaseDataset(Dataset):
         self.path_normalize_factors = os.path.join(predata_dir, 'nf.p')
 
         self.mode = mode
-        # choose between training, validation or test sequences
-        train_seqs, self.sequences = self.get_sequences(train_seqs, val_seqs,
-            test_seqs)
+        # self.sequences choose validation or test sequences according mode
+        train_seqs, self.sequences = self.get_sequences(train_seqs, val_seqs, test_seqs)
         # get and compute value for normalizing inputs
         self.mean_u, self.std_u = self.init_normalize_factors(train_seqs)
         self.mode = mode  # train, val or test
@@ -35,8 +34,7 @@ class BaseDataset(Dataset):
         self.imu_b0 = torch.Tensor([1e-3, 1e-3]).float()
         # IMU sampling time
         self.dt = dt # (s)
-        self.uni = torch.distributions.uniform.Uniform(-torch.ones(1),
-            torch.ones(1))
+        self.uni = torch.distributions.uniform.Uniform(-torch.ones(1), torch.ones(1))
 
     def get_sequences(self, train_seqs, val_seqs, test_seqs):
         """Choose sequence list depending on dataset mode"""
@@ -47,6 +45,7 @@ class BaseDataset(Dataset):
         }
         return sequences_dict['train'], sequences_dict[self.mode]
 
+    #__getitem__是数据集类必须实现的一个方法，用来定义如何获取数据样本
     def __getitem__(self, i):
         """Get IMU input and ground-truth ZUPT"""
         mondict = self.load_seq(i)
@@ -160,12 +159,12 @@ class KaistDataset(BaseDataset):
         Dataloader for the Kaist Data Set.
     """
 
-    def __init__(self, data_dir, predata_dir, train_seqs, val_seqs,
-                test_seqs, mode, dt):
+    def __init__(self, data_dir, predata_dir, train_seqs, val_seqs, test_seqs, mode, dt):
         super().__init__(predata_dir, train_seqs, val_seqs, test_seqs, mode, dt)
         # convert raw data to pre loaded data
         self.read_data(data_dir)
 
+    # 数据类型转换，kaist -> 自定义
     def read_data(self, data_dir):
         r"""Read the data from the dataset"""
 
@@ -178,10 +177,10 @@ class KaistDataset(BaseDataset):
 
         print("Start read_data, be patient please")
         def set_path(seq):
-            path_imu = os.path.join(data_dir, seq, "sensor_data",
-                "xsens_imu.csv")
+            path_imu = os.path.join(data_dir, seq, "sensor_data", "xsens_imu.csv")
             path_gt = os.path.join(data_dir, seq, "global_pose.csv")
-            return path_imu, path_gt
+            path_wheel = os.path.join(data_dir, seq, "encoder.csv")
+            return path_imu, path_gt, path_wheel
 
         time_factor = 1e9  # ns -> s
 
@@ -200,7 +199,7 @@ class KaistDataset(BaseDataset):
         # read each sequence
         for sequence in sequences:
             print("\nSequence name: " + sequence)
-            path_imu, path_gt = set_path(sequence)
+            path_imu, path_gt, path_wheel = set_path(sequence)
             imu = np.genfromtxt(path_imu, delimiter=",")
 
             # Urban00-05 and campus00 have only quaternion and Euler data

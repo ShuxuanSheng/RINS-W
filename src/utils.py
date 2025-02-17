@@ -4,16 +4,17 @@ import pickle
 import yaml
 import numpy as np
 
+# * 表示该函数接受可变数量的参数。传入的参数将会作为一个元组 f_names，其中包含传递给函数的所有参数。
 def pload(*f_names):
     """Pickle load"""
-    f_name = os.path.join(*f_names)
+    f_name = os.path.join(*f_names) #将所有传入的文件路径片段用操作系统的路径分隔符组合成一个完整的路径
     with open(f_name, "rb") as f:
         pickle_dict = pickle.load(f)
     return pickle_dict
 
-def pdump(pickle_dict, *f_names):
+def pdump(pickle_dict, *f_names): #*f_names是不定参数（通过单星号 * 收集多个位置参数），会被传递为一个包含多个字符串的元组
     """Pickle dump"""
-    f_name = os.path.join(*f_names)
+    f_name = os.path.join(*f_names) #将*f_names组合成一个路径
     with open(f_name, "wb") as f:
         pickle.dump(pickle_dict, f)
 

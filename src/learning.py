@@ -10,7 +10,7 @@ plt.rcParams['xtick.labelsize'] = 'x-large'
 plt.rcParams['ytick.labelsize'] = 'x-large'
 from matplotlib import rc
 rc('text', usetex=True)
-plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
+# plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 from termcolor import cprint
 import numpy as np
 import os
@@ -36,6 +36,7 @@ class BaseProcessing:
         self.figsize = (20, 12)
         self.dt = dt # (s)
         self.address, self.tb_address = self.find_address(address)
+
         if address is None:  # create new address
             pdump(self.net_params, self.address, 'net_params.p')
             ydump(self.net_params, self.address, 'net_params.yaml')
@@ -44,7 +45,7 @@ class BaseProcessing:
             self.train_params = pload(self.address, 'train_params.p')
             self._ready = True
         self.path_weights = os.path.join(self.address, 'weights.pt')
-        self.net = self.net_class(**self.net_params)
+        self.net = self.net_class(**self.net_params) # ** 解包运算符，相当于 self.net_class(param1=10, param2=20)，将字典中的每个键值对作为关键字参数传递。
         if self._ready:  # fill network parameters
             self.load_weights()
         self.seq = None
@@ -79,7 +80,7 @@ class BaseProcessing:
         ydump(hparams, self.address, 'hparams.yaml')
 
         # define datasets
-        dataset_train = dataset_class(**dataset_params, mode='train')
+        dataset_train = dataset_class(**dataset_params, mode='train') #继承自nn.dataset的自定义类，在类中定义如何获取到数据：输入和标签等
         dataset_train.init_train()
         dataset_val = dataset_class(**dataset_params, mode='val')
         dataset_val.init_val()
@@ -96,7 +97,7 @@ class BaseProcessing:
         loss_params = train_params['loss']
 
         # define optimizer, scheduler and loss
-        dataloader = DataLoader(dataset_train, **dataloader_params)
+        dataloader = DataLoader(dataset_train, **dataloader_params) #根据dataset_train以及其它参数，例如batch_size确定dataloader
         optimizer = Optimizer(self.net.parameters(), **optimizer_params)
         scheduler = Scheduler(optimizer, **scheduler_params)
         criterion = Loss(**loss_params)
@@ -115,7 +116,7 @@ class BaseProcessing:
         start_time = time.time()
         best_loss = torch.Tensor([float('Inf')])
 
-        # define some function for seeing evolution of training
+        #define some function for seeing evolution of training
         def write(epoch, loss_epoch):
             writer.add_scalar('loss/train', loss_epoch.item(), epoch)
             writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
@@ -132,15 +133,13 @@ class BaseProcessing:
         def write_val(loss, best_loss):
             if loss <= best_loss:
                 msg = 'validation loss decreases! :) '
-                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(),
-                    best_loss.item())
+                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(), best_loss.item())
                 cprint(msg, 'green')
                 best_loss = loss
                 self.save_net()
             else:
                 msg = 'validation loss increases! :( '
-                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(),
-                    best_loss.item())
+                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(), best_loss.item())
                 cprint(msg, 'yellow')
             writer.add_scalar('loss/val', loss.item(), epoch)
             return best_loss
@@ -261,8 +260,6 @@ class BaseProcessing:
     
     def get_results(self, seq):
         return pload(self.address, seq, 'results.p')['hat_xs']
-    
-
 
     @property
     def end_title(self):
@@ -314,8 +311,6 @@ class ZUPTProcessing(BaseProcessing):
         self.print_and_save_auc(auc)
         self.roc_plot(fpr, tpr)
         self.pr_plot(precision, recall)
-
-    
 
     def zupt_plot(self):
         title = "ROC curve " + self.end_title
@@ -370,7 +365,6 @@ class ZUPTProcessing(BaseProcessing):
         ydump(mondict, self.address, "net_result.yaml")
 
 
-
 class KalmanProcessing(BaseProcessing):
     def __init__(self, res_dir, tb_dir, net_class, bbb_net_params, address, dt, iekf_params, train_params):
         super().__init__(res_dir, tb_dir, net_class, bbb_net_params, None, dt)
@@ -395,16 +389,17 @@ class KalmanProcessing(BaseProcessing):
             kf.dump(self.address, seq, zupts, covs)
 
     def display_test(self, dataset_class, dataset_params, mode):
-        dataset = dataset_class(**dataset_params, mode=mode)
+        dataset = dataset_class(**dataset_params, mode=mode) #这里实例化对象
+        #返回指定mode 的列表，i是列表中的索引，从0开始，seq是索引i对应的数值
         for i, seq in enumerate(dataset.sequences):
-            print('\n', 'compute result for sequence ' + seq)
+            print('\n', 'compute result for sequence： ' + seq)
             self.seq = seq
             # get ground truth pose
             self.gt = dataset.load_gt(i)
             self.gt['Rots'] = SO3.from_quaternion(self.gt['qs'].cuda()).cpu()
 
             # get data and estimate
-            self.us, self.zupt = dataset[i]
+            self.us, self.zupt = dataset[i] #寻找 __getitem__ 方法，并将 i 作为参数传递给它
             self.iekf = self.get_iekf_results(seq)
             self.N = self.iekf['ps'].shape[0]
             N0 = self.us.shape[0]-self.N

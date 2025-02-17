@@ -8,7 +8,7 @@ import numpy as np
 import shutil
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
-data_dir = '/media/mines/46230797-4d43-4860-9b76-ce35e699ea47/KAIST' #TO EDIT
+data_dir = 'data/raw' #TO EDIT
 address = os.path.join(base_dir, 'results/Kaist/2020_08_06_14_17_25') #TO EDIT
 
 ################################################################################
@@ -36,21 +36,18 @@ bbb_net_params = {
 # Dataset parameters
 ################################################################################
 dataset_class = ds.KaistDataset
+#只是获取类 KaistDataset 本身的引用并将其赋值给 dataset_class，
+# 换句话说，这一行只是将 KaistDataset 类的定义赋给 dataset_class 变量，
+# 它不会触发 __init__ 构造函数，也不会初始化一个具体的对象。
 dataset_params = {
     # where are raw data ?
     'data_dir': data_dir,
     # where record preloaded data ?
     'predata_dir': os.path.join(base_dir, 'data/Kaist'),
     # set train, val and test sequence
-    'train_seqs': [
-        ],
-    'val_seqs': [
-        ],
-    'test_seqs': [
-        'urban07',
-        'urban14',
-        'urban16',
-        ],
+    'train_seqs': [],
+    'val_seqs': [],
+    'test_seqs': ['urban39', 'urban14', 'urban16',],
     'dt': 0.01,
 }
 ################################################################################
@@ -63,16 +60,12 @@ train_params = {
     'tb_dir': os.path.join(base_dir, "results/runs/Kaist"),
     'loss_class': sl.VLoss,
     'optimizer_class': torch.optim.Adam,
-    'optimizer': {
-    },
+    'optimizer': {},
     'loss_class': sl.VLoss,
-    'loss': {
-    },
+    'loss': {},
     'scheduler_class': torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
-    'scheduler': {
-    },
-    'dataloader': {
-    },
+    'scheduler': {},
+    'dataloader': {},
     # frequency of validation step
     'freq_val': 0,
     # total number of epochs
@@ -84,5 +77,7 @@ train_params = {
 learning_process = lr.KalmanProcessing(train_params['res_dir'],
     train_params['tb_dir'], net_class, bbb_net_params, address,
     dataset_params['dt'], iekf_params, train_params)
+
 learning_process.test(dataset_class, dataset_params, ['test'])
+
 learning_process.display_test(dataset_class, dataset_params, 'test')

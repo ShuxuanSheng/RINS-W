@@ -6,7 +6,7 @@ import src.losses as sl
 import src.dataset as ds
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
-data_dir = '/media/mines/46230797-4d43-4860-9b76-ce35e699ea47/KAIST' #TO EDIT
+data_dir = 'data/raw' #TO EDIT
 address = os.path.join(base_dir, 'results/Kaist/2020_08_06_14_17_25') #TO EDIT
 #address = "last"
 ################################################################################
@@ -33,37 +33,42 @@ dataset_params = {
     'predata_dir': os.path.join(base_dir, 'data/Kaist'),
     # set train, val and test sequence
     'train_seqs': [
-        'urban06',
-        'urban09',
-        'urban10',
-        'urban11',
-        'urban12',
-        'urban13',
-        'urban15',
-        'urban17',
-        'urban18',
-        'urban19',
-        'urban26',
-        'urban27',
-        'urban28',
+        #'urban06',
+        'urban08',
+        #'urban09',
+        #'urban10',
+        #'urban11',
+        #'urban12',
+        #'urban13',
+        #'urban15',
+        #'urban17',
+        #'urban18',
+        #'urban19',
+        'urban22',
+        #'urban26',
+        #'urban27',
+        #'urban28',
         'urban30',
-        'urban31',
-        'urban33',
-        'urban34',
-        'urban35',
-        'urban36',
+        #'urban31',
+        'urban32',
+        #'urban33',
+        #'urban34',
+        #'urban35',
+        #'urban36',
         'urban38',
         'urban39',
         ],
     'val_seqs': [
-        'urban07',
-        'urban14',
+        #'urban07',
+        'urban08',
+        #'urban14',
         #'urban16',
         ],
     'test_seqs': [
         #'urban07',
         #'urban14',
-        'urban16',
+        #'urban16',
+        'urban22'
         ],
     'dt': 0.01,
 }
@@ -106,13 +111,16 @@ train_params = {
 ################################################################################
 # Train on training data set
 ################################################################################
-learning_process = lr.ZUPTProcessing(train_params['res_dir'],
-    train_params['tb_dir'], net_class, net_params, None, dataset_params['dt'])
-learning_process.train(dataset_class, dataset_params, train_params)
+# learning_process = lr.ZUPTProcessing(train_params['res_dir'],
+#     train_params['tb_dir'], net_class, net_params, None, dataset_params['dt']) #address设置成none，会生成一个以当前日期为名字的文件夹，存放训练参数
+#
+# learning_process.train(dataset_class, dataset_params, train_params)
 ################################################################################
 # Test on full data set
 ################################################################################
 learning_process = lr.ZUPTProcessing(train_params['res_dir'],
     train_params['tb_dir'], net_class, net_params, address,
     dataset_params['dt'])
+
 learning_process.test(dataset_class, dataset_params, ['test'])
+learning_process.display_test(dataset_class, dataset_params, 'test')
