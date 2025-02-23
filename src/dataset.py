@@ -143,14 +143,30 @@ class BaseDataset(Dataset):
     def get_test(self, i):
         input_dict = self.load_seq(i)
         gt_zupts = input_dict['xs'][:, 0].unsqueeze(0).unsqueeze(0)
+        # with open('gt_zupts.txt', 'w') as f:
+        #     for value in gt_zupts.cpu().numpy().flatten():
+        #         f.write(f"{value}\n")
         us = input_dict['us']
 
         # start after at least 5s stop
         weight = torch.ones(1, 1, 1000)/999
-        gt_zupts = torch.nn.functional.conv1d(gt_zupts, weight).squeeze()
-        Nshift = torch.where(gt_zupts >= 1)[0][0]
+        # 卷积操作会计算输入信号在每个位置周围一定窗口（这里窗口大小为 1000）内的平均值，从而使得信号更加平滑,巻积前后数据维度发生了变化
+        gt_zupts_cov = torch.nn.functional.conv1d(gt_zupts, weight).squeeze()
+        # print(f"gt_zupts.shape = {gt_zupts.shape}") #torch.Size([1, 1, 215445])
+        # print(f"gt_zupts_cov.shape = {gt_zupts_cov.shape}")#torch.Size([214446])
+        # with open('gt_zupts_conv.txt', 'w') as f:
+        #     for value in gt_zupts.cpu().numpy().flatten():
+        #         f.write(f"{value}\n")
+        Nshift = torch.where(gt_zupts_cov >= 1)[0][0] #满足零速条件的所有索引中的第一个
         N = us.shape[0] - Nshift
         ts = torch.linspace(0, (N-1)*self.dt, N)
+        # gt_dict = self.load_gt(i)
+        # gt_ts = gt_dict['ts']
+        # plt.plot(gt_ts, gt_zupts.squeeze(), color="red", label=r'gt_zupt')
+        # # plt.plot(gt_ts, gt_zupts_cov.squeeze(), color="black", label=r'true')
+        # plt.legend()
+        # plt.grid()
+        # plt.show()
         return ts, us, Nshift
 
 
@@ -162,9 +178,9 @@ class KaistDataset(BaseDataset):
     def __init__(self, data_dir, predata_dir, train_seqs, val_seqs, test_seqs, mode, dt):
         super().__init__(predata_dir, train_seqs, val_seqs, test_seqs, mode, dt)
         # convert raw data to pre loaded data
+        # 数据类型转换，kaist -> 自定义
         self.read_data(data_dir)
 
-    # 数据类型转换，kaist -> 自定义
     def read_data(self, data_dir):
         r"""Read the data from the dataset"""
 
@@ -264,7 +280,7 @@ class KaistDataset(BaseDataset):
             zupts = v_gt.norm(dim=1, keepdim=True) < sm_velocity_max_threshold
             zupts = zupts.float()
             # set ground truth consistent with ZUPT
-            v_gt[zupts.squeeze() == 1] = 0
+            v_gt[zupts.squeeze() == 1] = 0 #将判断为静止的帧速度设置成绝对的0
 
             # save for training
             mondict = {

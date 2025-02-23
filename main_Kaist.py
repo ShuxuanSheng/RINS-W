@@ -7,8 +7,9 @@ import src.dataset as ds
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 data_dir = 'data/raw' #TO EDIT
-address = os.path.join(base_dir, 'results/Kaist/2020_08_06_14_17_25') #TO EDIT
+address = os.path.join(base_dir, 'results/Kaist/2020_08_06_14_17_25') #TO EDIT 指定读取网络结构参数和训练好的权重参数的路径
 #address = "last"
+
 ################################################################################
 # Network parameters
 ################################################################################
@@ -22,6 +23,7 @@ net_params = {
     'ds': [4, 4, 4],
     'momentum': 0.1,
 }
+
 ################################################################################
 # Dataset parameters
 ################################################################################
@@ -68,10 +70,11 @@ dataset_params = {
         #'urban07',
         #'urban14',
         #'urban16',
-        'urban22'
+        'urban38'
         ],
     'dt': 0.01,
 }
+
 ################################################################################
 # Training parameters
 ################################################################################
@@ -108,13 +111,15 @@ train_params = {
     # where record Tensorboard log ?
     'tb_dir': os.path.join(base_dir, "results/runs/Kaist"),
 }
+
 ################################################################################
 # Train on training data set
 ################################################################################
-# learning_process = lr.ZUPTProcessing(train_params['res_dir'],
-#     train_params['tb_dir'], net_class, net_params, None, dataset_params['dt']) #address设置成none，会生成一个以当前日期为名字的文件夹，存放训练参数
-#
+learning_process = lr.ZUPTProcessing(train_params['res_dir'],
+    train_params['tb_dir'], net_class, net_params, None, dataset_params['dt']) #address设置成none，会生成一个以当前日期为名字的文件夹，存放训练参数
+
 # learning_process.train(dataset_class, dataset_params, train_params)
+
 ################################################################################
 # Test on full data set
 ################################################################################

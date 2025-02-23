@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from src.utils import bmtm, bmtv, bmmt, bbmv
 
-
+"""
+    网络：根据9轴imu判断是否是静止
+"""
 class IMUNet(torch.nn.Module):
     def __init__(self, in_dim, out_dim, c0, dropout, ks, ds, momentum):
         super().__init__()
@@ -67,6 +69,9 @@ class IMUNet(torch.nn.Module):
         self.std_u = torch.nn.Parameter(std_u.cuda(), requires_grad=False)
 
 
+"""
+    网络：根据9轴imu输出zupt观测的协方差
+"""
 class BBBNet(torch.nn.Module):
     """Compute velocity measurement covariance from IMU input"""
 
@@ -87,9 +92,14 @@ class BBBNet(torch.nn.Module):
         self.cov_lin.weight.data[2, 0] = 0
         self.cov_lin.weight.data[2, 1] = 0
         self.cov_lin.weight.data[2, 2] = 0
-        self.cov_lin.weight.data[1, 2] =  0
+        self.cov_lin.weight.data[1, 2] = 0
 
     def forward(self, us):
         us = us[:, :, :6]
         covs = self.cov_lin(us)**2 + self.cov_bias**2 + self.min_std**2
+        # print("self.cov_lin(us)**2:", self.cov_lin(us)**2)
+        # print("self.cov_bias**2:", self.cov_bias**2)
+        # print("self.min_std**2:", self.min_std**2)
+        # print("权重矩阵的形状:", self.cov_lin.weight.shape)
+        # print("权重矩阵的值:", self.cov_lin.weight)
         return covs

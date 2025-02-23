@@ -62,6 +62,7 @@ class BaseIEKF:
         """Kalman filter loop"""
         dts = ts[1:] - ts[:-1]
         zupts = self.init(ts, us, zupts)
+        self.N = 100 * 60
         for i in range(1, self.N):
             self.propagate(i, dts[i-1], us[i], zupts[i])
             self.update(i, us[i], covs[i], zupts[i])
@@ -133,7 +134,8 @@ class BaseIEKF:
         R = self.Q[:6, :6]
         for i in range(N_init):
             S = axat(H, self.P) + R
-            Kt, _ = torch.solve(self.P.mm(H.t()).t(), S)
+            # Kt, _ = torch.solve(self.P.mm(H.t()).t(), S) # solve被移除，替换为linalg.solve
+            Kt= torch.linalg.solve(S,self.P.mm(H.t()).t())
             K = Kt.t()
             I_KH = self.IdP - K.mm(H)
             self.P = axat(I_KH, self.P.clone()) + axat(K, R)
@@ -142,7 +144,7 @@ class BaseIEKF:
     def propagate(self, i, dt, u, zupt):
         self.propagate_cov(i, dt, u, zupt)
         z = 1 - zupt
-        acc = z*(self.Rot.mv(u[3:6] - self.b_acc) + self.g)
+        acc = z*(self.Rot.mv(u[3:6] - self.b_acc) + self.g) #如果是静止，则按照acc=0来进行propagate
         self.Rot = self.Rot.mm(self.SO3.exp(z*(u[:3] - self.b_omega)*dt))
         self.ps[i] = self.ps[i-1] + z*self.v*dt + 1/2*acc*(dt**2)
         self.v = self.v + acc*dt
@@ -198,7 +200,8 @@ class BaseIEKF:
             self.zupt_omega_cov,
             self.zupt_acc_cov), 0))
         S = axat(H, self.P) + R
-        Kt, _ = torch.solve(self.P.mm(H.t()).t(), S)
+        # Kt, _ = torch.solve(self.P.mm(H.t()).t(), S) # solve被移除，替换为linalg.solve
+        Kt = torch.linalg.solve(S, self.P.mm(H.t()).t())
         K = Kt.t()
         self.xi = K.mv(self.r)
         self.state_update(i)

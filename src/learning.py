@@ -9,7 +9,8 @@ plt.rcParams['legend.fontsize'] = 'xx-large'
 plt.rcParams['xtick.labelsize'] = 'x-large'
 plt.rcParams['ytick.labelsize'] = 'x-large'
 from matplotlib import rc
-rc('text', usetex=True)
+plt.rc('text', usetex=False)
+plt.rcParams['text.usetex'] = False
 # plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 from termcolor import cprint
 import numpy as np
@@ -247,6 +248,12 @@ class BaseProcessing:
             us, xs = dataset[i]
             with torch.no_grad():
                 hat_xs = self.net(us.cuda().unsqueeze(0))
+            with open('xs.txt', 'w') as f:
+                for value in xs.cpu().numpy().flatten():
+                    f.write(f"{value}\n")
+            with open('hat_xs.txt', 'w') as f:
+                for value in hat_xs.cpu().numpy().flatten():
+                    f.write(f"{value}\n")
             loss = criterion(xs.cuda().unsqueeze(0), hat_xs)
             mkdir(self.address, seq)
             mondict = {
@@ -259,6 +266,7 @@ class BaseProcessing:
         raise NotImplementedError
     
     def get_results(self, seq):
+        print(f"load from file: {os.path.join(self.address, seq, 'results.p')}")
         return pload(self.address, seq, 'results.p')['hat_xs']
 
     @property
@@ -295,9 +303,12 @@ class ZUPTProcessing(BaseProcessing):
             self.us, self.zupt = dataset[i]
             self.N = self.us.shape[0]
             self.hat_zupt = torch.sigmoid(self.get_results(seq))
+            # with open('hat_zupt.txt', 'w') as f:
+            #     for value in self.hat_zupt.cpu().numpy().flatten():
+            #         f.write(f"{value}\n")
             self.ts = torch.linspace(0, self.N*self.dt, self.N)
 
-            self.convert()
+            self.convert() # s -> min m/s -> km/h
             self.zupt_plot()
             zupts = torch.cat((zupts, self.zupt))
             hat_zupts = torch.cat((hat_zupts, self.hat_zupt))
@@ -315,7 +326,7 @@ class ZUPTProcessing(BaseProcessing):
     def zupt_plot(self):
         title = "ROC curve " + self.end_title
         vs = self.gt['vs'].norm(dim=1)
-        vs /= vs.max()
+        vs /= vs.max() #映射到[0-1]区间，便于跟zupt结果画到一张图上
         zupt = 1 - self.zupt
         hat_zupt = 1 - self.hat_zupt
         fig, ax = plt.subplots(figsize=self.figsize)
@@ -324,6 +335,9 @@ class ZUPTProcessing(BaseProcessing):
         plt.plot(self.ts, vs, color="red", label=r'true speed')
         plt.plot(self.ts, zupt, color="black", label=r'true')
         plt.plot(self.ts, hat_zupt, color="blue", label=r'net')
+        plt.legend()
+        plt.grid()
+        plt.show()
         
         self.savefig(ax, fig, self.seq + "_zupt")
     
@@ -384,6 +398,9 @@ class KalmanProcessing(BaseProcessing):
             kf = IEKF(**self.iekf_params)
             zupts = torch.sigmoid(self.get_results(seq))
             us, zupts, covs = kf.nets2iekf(self.net, us, Nshift, zupts)
+            # with open('covs.txt', 'w') as f:
+            #     for value in covs.cpu().numpy().flatten():
+            #         f.write(f"{value}\n")
             # run filter !
             kf.forward(ts, us, zupts, covs)
             kf.dump(self.address, seq, zupts, covs)
@@ -410,20 +427,20 @@ class KalmanProcessing(BaseProcessing):
             self.ts = torch.linspace(0, self.N*self.dt, self.N)
             
             self.align_traj()
-            self.convert()
-            self.plot_orientation()
-            self.plot_velocity()
-            self.plot_velocity_in_body_frame()
+            # self.convert()
+            # self.plot_orientation()
+            # self.plot_velocity()
+            # self.plot_velocity_in_body_frame()
             self.plot_position()
-            self.plot_horizontal_position()
-            self.plot_bias_gyro()
-            self.plot_bias_acc()
-            self.plot_gyro()
-            self.plot_acc()
-            self.plot_zupt()
-            self.plot_orientation_err()
-            self.plot_velocity_err()
-            self.plot_body_velocity_err()
+            # self.plot_horizontal_position()
+            # self.plot_bias_gyro()
+            # self.plot_bias_acc()
+            # self.plot_gyro()
+            # self.plot_acc()
+            # self.plot_zupt()
+            # self.plot_orientation_err()
+            # self.plot_velocity_err()
+            # self.plot_body_velocity_err()
             self.plot_position_err()
 
     def get_iekf_results(self, seq):
@@ -550,6 +567,7 @@ class KalmanProcessing(BaseProcessing):
             axs[i].plot(self.ts, (mean-std)[:, i], color='green', alpha=0.5)
             axs[i].set_xlim(self.ts[0], self.ts[-1])
         fig.legend([r'ground truth', r'IEKF', r'$3\sigma$'], ncol=3)
+        plt.show()
         self.savefig(axs, fig, 'position_time')
     
     def plot_horizontal_position(self):
@@ -698,4 +716,5 @@ class KalmanProcessing(BaseProcessing):
             axs[i].plot(self.ts, err[:, i], color="blue")
             axs[i].set_xlim(self.ts[0], self.ts[-1])
         fig.legend([r'IEKF'])
+        plt.show()
         self.savefig(axs, fig, 'position_error')
