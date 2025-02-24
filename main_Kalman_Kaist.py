@@ -49,7 +49,7 @@ dataset_params = {
     'train_seqs': [],
     'val_seqs': [],
     # 'test_seqs': ['urban39', 'urban14', 'urban16',],
-    'test_seqs': ['urban38'],
+    'test_seqs': ['urban32'],
     'dt': 0.01,
 }
 

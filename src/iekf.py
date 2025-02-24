@@ -15,7 +15,7 @@ class BaseIEKF:
     g = torch.Tensor([0, 0, -9.80665]).double()
 
     # identity matrices
-    Id3 = g.new_ones(3).diag()
+    Id3 = g.new_ones(3).diag() #创建一个元素全为1的张量，并且与调用该方法的张量 g 具有相同的数据类型和设备（例如，是否在 GPU 上）
     IdP = g.new_ones(15).diag()
 
     # Jacobians
@@ -62,7 +62,7 @@ class BaseIEKF:
         """Kalman filter loop"""
         dts = ts[1:] - ts[:-1]
         zupts = self.init(ts, us, zupts)
-        self.N = 100 * 60
+        # self.N = 100 * 60
         for i in range(1, self.N):
             self.propagate(i, dts[i-1], us[i], zupts[i])
             self.update(i, us[i], covs[i], zupts[i])
@@ -178,32 +178,32 @@ class BaseIEKF:
         else:
             z = 0
 
-        H[:3, 3:6] = self.Rot.t()
+        H[:3, 3:6] = self.Rot.t() # eq.(39)
         H[0, 3:6] *= z
-
+        #self.r是包含速度、角速度和加速度残差的向量
         self.r = torch.cat((- self.Rot.t().mv(self.v),
             u[:3] - self.b_omega,
             u[3:6] - self.b_acc + self.Rot.t().mv(self.g)))
-        self.r[0] *= z
+        self.r[0] *= z #如果z=1，那么self.r等于它本身，如果z=0，那么self.r等于0
 
         z *= self.r[3:6].norm() < self.max_omega_norm
         z *= self.r[3:6].abs().max() < self.max_omega
         z *= self.r[6:9].norm() < self.max_acc_norm
         z *= self.r[6:9].abs().max() < self.max_acc
-        self.r[3:9] *= z
+        self.r[3:9] *= z #如果z=1，那么self.r等于它本身，如果z=0，那么self.r等于0
 
+        # eq.(39)~eq.(40)，正负号取反
         H[3:6, 9:12] = z*self.Id3
         H[6:9, 12:15] = z*self.Id3
         H[6:9, :3] = -z*self.Rot.t().mm(self.Wg)
 
-        R = torch.diag(torch.cat((cov,
-            self.zupt_omega_cov,
-            self.zupt_acc_cov), 0))
-        S = axat(H, self.P) + R
+        R = torch.diag(torch.cat((cov, self.zupt_omega_cov, self.zupt_acc_cov), 0))
+        S = axat(H, self.P) + R  # S = H * P * H_T + R
         # Kt, _ = torch.solve(self.P.mm(H.t()).t(), S) # solve被移除，替换为linalg.solve
-        Kt = torch.linalg.solve(S, self.P.mm(H.t()).t())
+        Kt = torch.linalg.solve(S, self.P.mm(H.t()).t()) #K_T = S^-1 * (PH_T)_T
         K = Kt.t()
-        self.xi = K.mv(self.r)
+        # print(f"z = {z},H = {H}")
+        self.xi = K.mv(self.r) # k * r
         self.state_update(i)
         self.covariance_update(i, K, H, R)
 

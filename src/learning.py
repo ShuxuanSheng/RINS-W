@@ -427,11 +427,12 @@ class KalmanProcessing(BaseProcessing):
             self.ts = torch.linspace(0, self.N*self.dt, self.N)
             
             self.align_traj()
-            # self.convert()
+            self.convert()
             # self.plot_orientation()
             # self.plot_velocity()
             # self.plot_velocity_in_body_frame()
             self.plot_position()
+            self.plot_traj()
             # self.plot_horizontal_position()
             # self.plot_bias_gyro()
             # self.plot_bias_acc()
@@ -556,8 +557,8 @@ class KalmanProcessing(BaseProcessing):
         mean = self.iekf['ps']
         std = 3*self.iekf['Ps'][:, 6:9].sqrt()
         fig, axs = plt.subplots(3, 1, sharex=True, figsize=self.figsize)
-        axs[0].set(ylabel='$\mathbf{p}_n^x$ (km)', title=title)
-        axs[1].set(ylabel='$\mathbf{p}_n^y$ (km)')
+        axs[0].set(ylabel='$\mathbf{p}_n^x$ (m)', title=title)
+        axs[1].set(ylabel='$\mathbf{p}_n^y$ (m)')
         axs[2].set(xlabel='$t$ (min)', ylabel='$\mathbf{p}_n^z$ (km)')
         
         for i in range(3):
@@ -569,7 +570,22 @@ class KalmanProcessing(BaseProcessing):
         fig.legend([r'ground truth', r'IEKF', r'$3\sigma$'], ncol=3)
         plt.show()
         self.savefig(axs, fig, 'position_time')
-    
+
+    def plot_traj(self):
+        title = "Trajectory as function of time " + self.end_title
+        true = self.gt['ps']
+        mean = self.iekf['ps']
+        fig, axs = plt.subplots(1, 1, sharex=True, figsize=self.figsize)
+        plt.xlabel('x/m')
+        plt.ylabel('y/m')
+
+        plt.plot(true[:, 0], true[:, 1], color="black")
+        plt.plot(mean[:, 0], mean[:, 1], color="green")
+        fig.legend([r'ground truth', r'IEKF'], ncol=2)
+        plt.grid()
+        plt.show()
+        self.savefig(axs, fig, 'trajectory')
+        plt.show()
     def plot_horizontal_position(self):
         title = "Horizontal position " + self.end_title
         true = self.gt['ps']
