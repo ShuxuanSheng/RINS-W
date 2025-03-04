@@ -21,3 +21,10 @@ class VLoss(torch.nn.Module):
         zupts = xs[:, self.n0:].squeeze()
         hat_zupts = hat_xs[:, self.n0:].squeeze()
         return self.w*self.bce(hat_zupts, zupts)
+
+    def get_loss(self, pred, pred_cov, targ, epoch):
+        if epoch < 20:
+            loss = loss_mse(pred, targ)  # MSE
+        else:
+            loss = loss_distribution_diag(pred, pred_cov, targ) # NLL
+        return loss

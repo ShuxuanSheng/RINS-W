@@ -115,17 +115,14 @@ train_params = {
 ################################################################################
 # Train on training data set
 ################################################################################
-learning_process = lr.ZUPTProcessing(train_params['res_dir'],
-    train_params['tb_dir'], net_class, net_params, None, dataset_params['dt']) #address设置成none，会生成一个以当前日期为名字的文件夹，存放训练参数
+learning_process = lr.ZUPTProcessing(train_params['res_dir'], train_params['tb_dir'], net_class, net_params, None, dataset_params['dt']) #address设置成none，会生成一个以当前日期为名字的文件夹，存放训练参数
 
-# learning_process.train(dataset_class, dataset_params, train_params)
+learning_process.train(dataset_class, dataset_params, train_params)
 
 ################################################################################
 # Test on full data set
 ################################################################################
-learning_process = lr.ZUPTProcessing(train_params['res_dir'],
-    train_params['tb_dir'], net_class, net_params, address,
-    dataset_params['dt'])
+learning_process = lr.ZUPTProcessing(train_params['res_dir'], train_params['tb_dir'], net_class, net_params, address, dataset_params['dt'])
 
 learning_process.test(dataset_class, dataset_params, ['test'])
 learning_process.display_test(dataset_class, dataset_params, 'test')

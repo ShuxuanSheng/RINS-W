@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from src.utils import bmtm, bmtv, bmmt, bbmv
-
+from src.model_resnet import BasicBlock1D , ResNet1D
 """
     网络：根据9轴imu判断是否是静止
 """
@@ -70,7 +70,7 @@ class IMUNet(torch.nn.Module):
 
 
 """
-    网络：根据9轴imu输出zupt观测的协方差
+    输出zupt观测的协方差,目前是固定值
 """
 class BBBNet(torch.nn.Module):
     """Compute velocity measurement covariance from IMU input"""
@@ -103,3 +103,20 @@ class BBBNet(torch.nn.Module):
         # print("权重矩阵的形状:", self.cov_lin.weight.shape)
         # print("权重矩阵的值:", self.cov_lin.weight)
         return covs
+
+
+"""
+    网络：根据6轴imu 预测三维速度
+"""
+class HcNet(torch.nn.Module):
+    def __init__(self, arch, net_config, input_dim=6, output_dim=3):
+        super().__init__()
+        if arch in ["resnet"]:
+            self.model = ResNet1D(
+                BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
+            )
+        else:
+            raise ValueError("Invalid architecture: ", arch)
+    def set_normalized_factors(self, mean_u, std_u):
+        self.mean_u = torch.nn.Parameter(mean_u.cuda(), requires_grad=False)
+        self.std_u = torch.nn.Parameter(std_u.cuda(), requires_grad=False)

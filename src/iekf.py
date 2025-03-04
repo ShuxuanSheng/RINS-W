@@ -100,9 +100,9 @@ class BaseIEKF:
 
     def init_zupt(self, zupts):
         """Do thresholding on ZUPT"""
-        zupts[zupts > self.th_max_zupt] = 1
+        zupts[zupts > self.th_max_zupt] = 1  #大于0.98的ZUPT设置为1
         zupts[zupts <= self.th_min_zupt] = 0
-        zupts[:self.N_init] = 1 # start by stop
+        zupts[:self.N_init] = 1 # start by stop 从静止开始
         return zupts
 
     def init_trajectory(self, ts, us):

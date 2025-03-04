@@ -418,6 +418,7 @@ class KalmanProcessing(BaseProcessing):
             # get data and estimate
             self.us, self.zupt = dataset[i] #寻找 __getitem__ 方法，并将 i 作为参数传递给它
             self.iekf = self.get_iekf_results(seq)
+            self.iekf_nozupt = pload(self.address, seq, 'iekf_nozupt.p')
             self.N = self.iekf['ps'].shape[0]
             N0 = self.us.shape[0]-self.N
             self.us = self.us[N0:]
@@ -425,7 +426,7 @@ class KalmanProcessing(BaseProcessing):
             for key, val in self.gt.items():
                 self.gt[key] = val[N0:]
             self.ts = torch.linspace(0, self.N*self.dt, self.N)
-            
+
             self.align_traj()
             self.convert()
             # self.plot_orientation()
@@ -451,9 +452,12 @@ class KalmanProcessing(BaseProcessing):
         """yaw only and position alignment at initial time"""
         self.gt['rpys'] = SO3.to_rpy(self.gt['Rots'].cuda()).cpu()
         self.iekf['rpys'] = SO3.to_rpy(self.iekf['Rots'].cuda()).cpu()
-        
+        self.iekf_nozupt['rpys'] = SO3.to_rpy(self.iekf_nozupt['Rots'].cuda()).cpu()
+
         self.gt['ps'] -= self.gt['ps'][0].clone()
         self.iekf['ps'] -= self.iekf['ps'][0].clone()
+        self.iekf_nozupt['ps'] -= self.iekf_nozupt['ps'][0].clone()
+
         rpys = self.gt['rpys'][:2] - self.iekf['rpys'][:2]
         Rot = SO3.from_rpy(rpys[:, 0], rpys[:, 1], rpys[:, 2])
         Rot = Rot[0].repeat(self.iekf['ps'].shape[0], 1, 1)
@@ -462,6 +466,15 @@ class KalmanProcessing(BaseProcessing):
         self.iekf['vs'] = bmv(Rot, self.iekf['vs'])
         self.iekf['ps'] = bmv(Rot, self.iekf['ps'])
         self.iekf['rpys'] = SO3.to_rpy(self.iekf['Rots'].cuda()).cpu()
+
+        rpys = self.gt['rpys'][:2] - self.iekf_nozupt['rpys'][:2]
+        Rot = SO3.from_rpy(rpys[:, 0], rpys[:, 1], rpys[:, 2])
+        Rot = Rot[0].repeat(self.iekf_nozupt['ps'].shape[0], 1, 1)
+
+        self.iekf_nozupt['Rots'] = Rot.bmm(self.iekf_nozupt['Rots'])
+        self.iekf_nozupt['vs'] = bmv(Rot, self.iekf_nozupt['vs'])
+        self.iekf_nozupt['ps'] = bmv(Rot, self.iekf_nozupt['ps'])
+        self.iekf_nozupt['rpys'] = SO3.to_rpy(self.iekf_nozupt['Rots'].cuda()).cpu()
 
     def convert(self):
         # s -> min
@@ -575,13 +588,15 @@ class KalmanProcessing(BaseProcessing):
         title = "Trajectory as function of time " + self.end_title
         true = self.gt['ps']
         mean = self.iekf['ps']
+        mean_nozupt = self.iekf_nozupt['ps']
         fig, axs = plt.subplots(1, 1, sharex=True, figsize=self.figsize)
         plt.xlabel('x/m')
         plt.ylabel('y/m')
 
         plt.plot(true[:, 0], true[:, 1], color="black")
         plt.plot(mean[:, 0], mean[:, 1], color="green")
-        fig.legend([r'ground truth', r'IEKF'], ncol=2)
+        plt.plot(mean_nozupt[:, 0], mean_nozupt[:, 1], color="red")
+        fig.legend([r'ground truth', r'IEKF', r'IEKF_nozupt'], ncol=2)
         plt.grid()
         plt.show()
         self.savefig(axs, fig, 'trajectory')
@@ -734,3 +749,118 @@ class KalmanProcessing(BaseProcessing):
         fig.legend([r'IEKF'])
         plt.show()
         self.savefig(axs, fig, 'position_error')
+
+class HcProcessing(BaseProcessing):
+    def __init__(self, res_dir, tb_dir, net_class, net_params, address, dt):
+        super().__init__(res_dir, tb_dir, net_class, net_params, address, dt)
+    def train(self, dataset_class, dataset_params, train_params):
+        """train the neural network. GPU is assumed"""
+        self.train_params = train_params
+        pdump(self.train_params, self.address, 'train_params.p')
+        ydump(self.train_params, self.address, 'train_params.yaml')
+
+        hparams = self.get_hparams(dataset_class, dataset_params, train_params)
+        ydump(hparams, self.address, 'hparams.yaml')
+
+        # define datasets
+        dataset_train = dataset_class(**dataset_params, mode='train')
+        dataset_train.init_train()
+        dataset_val = dataset_class(**dataset_params, mode='val')
+        dataset_val.init_val()
+
+        # get class
+        Optimizer = train_params['optimizer_class']
+        Scheduler = train_params['scheduler_class']
+        Loss = train_params['loss_class']
+
+        # get parameters
+        dataloader_params = train_params['dataloader']
+        optimizer_params = train_params['optimizer']
+        scheduler_params = train_params['scheduler']
+        loss_params = train_params['loss']
+
+        # define optimizer, scheduler and loss
+        dataloader = DataLoader(dataset_train, **dataloader_params) #根据dataset_train以及其它参数，例如batch_size确定dataloader
+        optimizer = Optimizer(self.net.parameters(), **optimizer_params)
+        scheduler = Scheduler(optimizer, **scheduler_params)
+        criterion = Loss(**loss_params)
+
+        # remaining training parameters
+        freq_val = train_params['freq_val']
+        n_epochs = train_params['n_epochs']
+
+        # init net w.r.t dataset
+        self.net = self.net.cuda()
+        mean_u, std_u = dataset_train.mean_u, dataset_train.std_u
+        self.net.set_normalized_factors(mean_u, std_u)
+
+        # start tensorboard writer
+        writer = SummaryWriter(self.tb_address)
+        start_time = time.time()
+        best_loss = torch.Tensor([float('Inf')])
+
+        #define some function for seeing evolution of training
+        def write(epoch, loss_epoch):
+            writer.add_scalar('loss/train', loss_epoch.item(), epoch)
+            writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
+            print('Train Epoch: {:2d} \tLoss: {:.4f}'.format(
+                epoch, loss_epoch.item()))
+            scheduler.step(epoch)
+
+        def write_time(epoch, start_time):
+            delta_t = time.time() - start_time
+            print("Amount of time spent for epochs " +
+                "{}-{}: {:.1f}s\n".format(epoch - freq_val, epoch, delta_t))
+            writer.add_scalar('time_spend', delta_t, epoch)
+
+        def write_val(loss, best_loss):
+            if loss <= best_loss:
+                msg = 'validation loss decreases! :) '
+                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(), best_loss.item())
+                cprint(msg, 'green')
+                best_loss = loss
+                self.save_net()
+            else:
+                msg = 'validation loss increases! :( '
+                msg += '(curr/prev loss {:.4f}/{:.4f})'.format(loss.item(), best_loss.item())
+                cprint(msg, 'yellow')
+            writer.add_scalar('loss/val', loss.item(), epoch)
+            return best_loss
+
+        # training loop !
+        for epoch in range(1, n_epochs + 1):
+            loss_epoch = self.loop_train(dataloader, optimizer, criterion)
+            write(epoch, loss_epoch)
+            scheduler.step(epoch)
+            if epoch % freq_val == 0:
+                loss = self.loop_val(dataset_val, criterion)
+                write_time(epoch, start_time)
+                best_loss = write_val(loss, best_loss)
+                start_time = time.time()
+        # training is over !
+
+        # test on new data
+        dataset_test = dataset_class(**dataset_params, mode='test')
+        self.load_weights()
+        test_loss = self.loop_val(dataset_test, criterion)
+        dict_loss = {
+            'final_loss/val': best_loss.item(),
+            'final_loss/test': test_loss.item()
+            }
+        writer.add_hparams(hparams, dict_loss)
+        ydump(dict_loss, self.address, 'final_loss.yaml')
+        writer.close()
+
+    def loop_train(self, dataloader, optimizer, criterion):
+        """Forward-backward loop over training data"""
+        loss_epoch = 0
+        optimizer.zero_grad()
+        for us, targ in dataloader:
+            print(us.shape)
+            us = dataloader.dataset.add_noise(us.cuda())
+            pred, pred_cov = self.net.model(us) #网络预测的速度及其对应的方差
+            loss = criterion.get_loss(pred, pred_cov, targ, epoch).to(device) #target是acc的真值
+            loss.backward()
+            loss_epoch += loss.detach().cpu()
+        optimizer.step()
+        return loss_epoch

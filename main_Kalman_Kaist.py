@@ -78,9 +78,7 @@ train_params = {
 ################################################################################
 # Test on full data set
 ################################################################################
-learning_process = lr.KalmanProcessing(train_params['res_dir'],
-    train_params['tb_dir'], net_class, bbb_net_params, address,
-    dataset_params['dt'], iekf_params, train_params)
+learning_process = lr.KalmanProcessing(train_params['res_dir'], train_params['tb_dir'], net_class, bbb_net_params, address, dataset_params['dt'], iekf_params, train_params)
 
 learning_process.test(dataset_class, dataset_params, ['test'])
 
