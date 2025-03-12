@@ -46,13 +46,13 @@ dataset_params = {
         #'urban17',
         #'urban18',
         #'urban19',
-        'urban22',
+        #'urban22',
         #'urban26',
         #'urban27',
         #'urban28',
-        'urban30',
+        #'urban30',
         #'urban31',
-        'urban32',
+        #'urban32',
         #'urban33',
         #'urban34',
         #'urban35',
@@ -62,7 +62,7 @@ dataset_params = {
         ],
     'val_seqs': [
         #'urban07',
-        'urban08',
+        #'urban08',
         #'urban14',
         #'urban16',
         ],
@@ -70,7 +70,7 @@ dataset_params = {
         #'urban07',
         #'urban14',
         #'urban16',
-        'urban32'
+        #'urban32'
         ],
     'dt': 0.01,
 }

@@ -24,7 +24,7 @@ class VLoss(torch.nn.Module):
 
     def get_loss(self, pred, pred_cov, targ, epoch):
         if epoch < 20:
-            loss = loss_mse(pred, targ)  # MSE
+            loss = (pred - targ).pow(2)  # MSE
         else:
-            loss = loss_distribution_diag(pred, pred_cov, targ) # NLL
+            loss = ((pred - targ).pow(2)) / (2 * torch.exp(2 * pred_cov)) + pred_cov # NLL
         return loss

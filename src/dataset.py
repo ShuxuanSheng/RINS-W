@@ -180,7 +180,7 @@ class KaistDataset(BaseDataset):
         super().__init__(predata_dir, train_seqs, val_seqs, test_seqs, mode, dt)
         # convert raw data to pre loaded data
         # 数据类型转换，kaist -> 自定义
-        # self.read_data(data_dir)
+        self.read_data(data_dir)
 
     def read_data(self, data_dir):
         r"""Read the data from the dataset"""
@@ -196,7 +196,7 @@ class KaistDataset(BaseDataset):
         def set_path(seq):
             path_imu = os.path.join(data_dir, seq, "sensor_data", "xsens_imu.csv")
             path_gt = os.path.join(data_dir, seq, "global_pose.csv")
-            path_wheel = os.path.join(data_dir, seq, "encoder.csv")
+            path_wheel = os.path.join(data_dir, seq, "sensor_data", "encoder.csv")
             return path_imu, path_gt, path_wheel
 
         time_factor = 1e9  # ns -> s
@@ -219,75 +219,117 @@ class KaistDataset(BaseDataset):
             path_imu, path_gt, path_wheel = set_path(sequence)
             imu = np.genfromtxt(path_imu, delimiter=",")
 
+            t = imu[:, 0]
+            start = t[0]
+            end = t[-1]
+            num_points = len(t)
+            imu[:, 0] = np.linspace(start, end, num=num_points)
+
             # Urban00-05 and campus00 have only quaternion and Euler data
             if not imu.shape[1] > 10:
                 cprint("No IMU data for dataset " + sequence, 'yellow')
                 continue
+
             gt = np.genfromtxt(path_gt, delimiter=",")
+            wheel = np.genfromtxt(path_wheel, delimiter=",")
 
             # time synchronization between IMU and ground truth
-            t0 = np.max([gt[0, 0], imu[0, 0]])
-            t_end = np.min([gt[-1, 0], imu[-1, 0]])
+            # t0 = np.max([gt[0, 0], imu[0, 0]])
+            # t_end = np.min([gt[-1, 0], imu[-1, 0]])
+
+            t0 = np.max([gt[0, 0], imu[0, 0], wheel[0, 0]])
+            t_end = np.min([gt[-1, 0], imu[-1, 0], wheel[-1, 0]])
 
             # start index
             idx0_imu = np.searchsorted(imu[:, 0], t0)
             idx0_gt = np.searchsorted(gt[:, 0], t0)
+            idx0_wheel = np.searchsorted(wheel[:, 0], t0)
 
             # end index
             idx_end_imu = np.searchsorted(imu[:, 0], t_end, 'right')
             idx_end_gt = np.searchsorted(gt[:, 0], t_end, 'right')
+            idx_end_wheel = np.searchsorted(wheel[:, 0], t_end, 'right')
 
             # subsample
             imu = imu[idx0_imu: idx_end_imu]
             gt = gt[idx0_gt: idx_end_gt]
+            wheel = wheel[idx0_wheel: idx_end_wheel]
             t = imu[:, 0]
 
             # take ground truth position
             p_gt = gt[:, [4, 8, 12]]
             p_gt = p_gt - p_gt[0]
-
             # take ground matrix pose
             Rot_gt = torch.Tensor(gt.shape[0], 3, 3)
             for j in range(3):
                 Rot_gt[:, j] = torch.Tensor(gt[:, 1 + 4 * j: 1 + 4 * j + 3])
             q_gt = SO3.to_quaternion(Rot_gt)
-            # convert to angle orientation
             rpys = SO3.to_rpy(Rot_gt)
+
+            wheel_cnt = wheel[:, [1, 2]]
+
             t_gt = gt[:, 0]
+            t_wheel = wheel[:, 0]
+
             # interpolate ground-truth
             p_gt = interpolate(p_gt, t_gt, t)
             rpys = interpolate(rpys.numpy(), t_gt, t, angle=True)
+            wheel_cnt = interpolate(wheel_cnt, t_wheel, t)
 
-            # convert from numpy
+            # convert from numpy to Tensor
             ts = (t - t0)/time_factor
             p_gt = torch.Tensor(p_gt)
             rpys = torch.Tensor(rpys).float()
             q_gt = SO3.to_quaternion(SO3.from_rpy(rpys[:, 0], rpys[:, 1], rpys[:, 2]))
             imu = torch.Tensor(imu).float()
+            wheel_cnt = torch.Tensor(wheel_cnt).float()
 
             # take IMU gyro and accelerometer and magnetometer
             imu = imu[:, 8:17]
 
             dt = ts[1:] - ts[:-1]
+
+            v_wheel = torch.zeros(wheel_cnt.shape[0], 2)
+            for j in range(2):
+                wheel_cnt_j = wheel_cnt[:, j]
+                v_j = (wheel_cnt_j[1:] - wheel_cnt_j[:-1]) / dt
+                v_wheel[1:, j] = torch.Tensor(v_j)
+
             # compute speed ground truth (apply smoothing)
             v_gt = torch.zeros(p_gt.shape[0], 3)
             for j in range(3):
                 p_gt_smooth = savgol_filter(p_gt[:, j], 11, 1)
                 v_j = (p_gt_smooth[1:] - p_gt_smooth[:-1]) / dt
-                v_j_smooth = savgol_filter(v_j, 11, 0)
-                v_gt[1:, j] = torch.Tensor(v_j_smooth)
+                # v_j_smooth = savgol_filter(v_j, 11, 0)
+                # v_gt[1:, j] = torch.Tensor(v_j_smooth)
+                v_gt[1:, j] = torch.Tensor(v_j)
 
-            # 将组合后的数据保存到文本文件
-            Rot = SO3.from_quaternion(q_gt)
+            Rot = SO3.from_rpy(rpys[:, 0], rpys[:, 1], rpys[:, 2])
             Rot_T = Rot.transpose(1, 2)
-            print("Rot_gt_T shape:", Rot_T.shape)
-            print("v_gt shape:", v_gt.shape)
             v_gt_transformed = torch.einsum('bij,bj->bi', Rot_T, v_gt)
 
-            # 合并 ts 和变换后的 v_gt_transformed
-            combined_data = torch.cat((torch.from_numpy(ts).unsqueeze(1), v_gt_transformed), dim=1)
+            yaw_np = (rpys[:, 2]).numpy()
+            yaw_np = np.unwrap(yaw_np)
+            Rot = SO3.from_rpy(rpys[:, 0], rpys[:, 1], torch.from_numpy(yaw_np))
+            Rot_T = Rot.transpose(1, 2)
+            v_gt_transformed_unwrap = torch.einsum('bij,bj->bi', Rot_T, v_gt)
+
+            v_gt_transformed_smooth = torch.zeros(v_gt_transformed.shape[0], 3)
+            for j in range(3):
+                v_j = v_gt_transformed[:, j]
+                v_j_smooth = savgol_filter(v_j, 5, 0) #savgol_filter通过局部多项式拟合来平滑数据
+                v_gt_transformed_smooth[:, j] = torch.Tensor(v_j_smooth)
+
+            p_gt_smooth_x = savgol_filter(p_gt[:, 0], 11, 1)
+            diff_p_gt_smooth_x = np.diff(p_gt_smooth_x)
+            diff_pos_dt = diff_p_gt_smooth_x / dt
+            combined_diff = torch.cat((torch.from_numpy(diff_p_gt_smooth_x).unsqueeze(1), torch.from_numpy(dt).unsqueeze(1),torch.from_numpy(diff_pos_dt).unsqueeze(1)), dim=1)
+            np.savetxt(self.predata_dir + sequence + '_diff.csv', combined_diff.numpy(), fmt='%.6f', delimiter=',')
+
+            combined_data = torch.cat((torch.from_numpy(ts).unsqueeze(1), v_gt, v_gt_transformed, v_gt_transformed_unwrap, v_gt_transformed_smooth, v_wheel), dim=1)
             combined_data_np = combined_data.numpy()
             np.savetxt(self.predata_dir + sequence + '_gt_v.csv', combined_data.numpy(), fmt='%.6f', delimiter=',')
+
             # ground truth specific motion measurement (binary)
             zupts = v_gt.norm(dim=1, keepdim=True) < sm_velocity_max_threshold
             zupts = zupts.float()
@@ -297,133 +339,6 @@ class KaistDataset(BaseDataset):
             # save for training
             mondict = {
                 'xs': zupts.float(),
-                'us': imu.float(),
-            }
-            pdump(mondict, self.predata_dir, sequence + ".p")
-            # save ground truth
-            mondict = {
-                'ts': ts,
-                'qs': q_gt.float(),
-                'vs': v_gt.float(),
-                'ps': p_gt.float(),
-            }
-            pdump(mondict, self.predata_dir, sequence + "_gt.p")
-
-class KaistHcDataset(BaseDataset):
-    """
-        Dataloader for the Kaist Data Set.
-    """
-    def __init__(self, data_dir, predata_dir, train_seqs, val_seqs, test_seqs, mode, dt):
-        super().__init__(predata_dir, train_seqs, val_seqs, test_seqs, mode, dt)
-        # convert raw data to pre loaded data
-        # 数据类型转换，kaist -> 自定义
-        # self.read_data(data_dir)
-
-    def read_data(self, data_dir):
-        r"""Read the data from the dataset"""
-        f = os.path.join(self.predata_dir, 'urban06.p')
-        if True and os.path.exists(f):
-            return
-        print("Start read_data, be patient please")
-        def set_path(seq):
-            path_imu = os.path.join(data_dir, seq, "sensor_data", "xsens_imu.csv")
-            path_gt = os.path.join(data_dir, seq, "global_pose.csv")
-            path_wheel = os.path.join(data_dir, seq, "encoder.csv")
-            return path_imu, path_gt, path_wheel
-
-        time_factor = 1e9  # ns -> s
-
-        def interpolate(x, t, t_int, angle=False):
-            """
-            Interpolate ground truth with sensors
-            """
-            x_int = np.zeros((t_int.shape[0], x.shape[1]))
-            for i in range(x.shape[1]):
-                if angle:
-                    x[:, i] = np.unwrap(x[:, i])
-                x_int[:, i] = np.interp(t_int, t, x[:, i])
-            return x_int
-
-        sequences = os.listdir(data_dir)
-        # read each sequence
-        for sequence in sequences:
-            print("\nSequence name: " + sequence)
-            path_imu, path_gt, path_wheel = set_path(sequence)
-            imu = np.genfromtxt(path_imu, delimiter=",")
-
-            # Urban00-05 and campus00 have only quaternion and Euler data
-            if not imu.shape[1] > 10:
-                cprint("No IMU data for dataset " + sequence, 'yellow')
-                continue
-            gt = np.genfromtxt(path_gt, delimiter=",")
-
-            # time synchronization between IMU and ground truth
-            t0 = np.max([gt[0, 0], imu[0, 0]])
-            t_end = np.min([gt[-1, 0], imu[-1, 0]])
-
-            # start index
-            idx0_imu = np.searchsorted(imu[:, 0], t0)
-            idx0_gt = np.searchsorted(gt[:, 0], t0)
-
-            # end index
-            idx_end_imu = np.searchsorted(imu[:, 0], t_end, 'right')
-            idx_end_gt = np.searchsorted(gt[:, 0], t_end, 'right')
-
-            # subsample
-            imu = imu[idx0_imu: idx_end_imu]
-            gt = gt[idx0_gt: idx_end_gt]
-            t = imu[:, 0]
-
-            # take ground truth position
-            p_gt = gt[:, [4, 8, 12]]
-            p_gt = p_gt - p_gt[0]
-
-            # take ground matrix pose
-            Rot_gt = torch.Tensor(gt.shape[0], 3, 3)
-            for j in range(3):
-                Rot_gt[:, j] = torch.Tensor(gt[:, 1 + 4 * j: 1 + 4 * j + 3])
-            q_gt = SO3.to_quaternion(Rot_gt)
-            # convert to angle orientation
-            rpys = SO3.to_rpy(Rot_gt)
-            t_gt = gt[:, 0]
-            # interpolate ground-truth
-            p_gt = interpolate(p_gt, t_gt, t)
-            rpys = interpolate(rpys.numpy(), t_gt, t, angle=True)
-
-            # convert from numpy
-            ts = (t - t0)/time_factor
-            p_gt = torch.Tensor(p_gt)
-            rpys = torch.Tensor(rpys).float()
-            q_gt = SO3.to_quaternion(SO3.from_rpy(rpys[:, 0], rpys[:, 1], rpys[:, 2]))
-            imu = torch.Tensor(imu).float()
-
-            # take IMU gyro and accelerometer and magnetometer
-            imu = imu[:, 8:14]
-
-            dt = ts[1:] - ts[:-1]
-            # compute speed ground truth (apply smoothing)
-            v_gt = torch.zeros(p_gt.shape[0], 3)
-            for j in range(3):
-                p_gt_smooth = savgol_filter(p_gt[:, j], 11, 1)
-                v_j = (p_gt_smooth[1:] - p_gt_smooth[:-1]) / dt
-                v_j_smooth = savgol_filter(v_j, 11, 0)
-                v_gt[1:, j] = torch.Tensor(v_j_smooth)
-
-            # 将组合后的数据保存到文本文件
-            Rot = SO3.from_quaternion(q_gt)
-            Rot_T = Rot.transpose(1, 2)
-            # print("Rot_gt_T shape:", Rot_T.shape)
-            # print("v_gt shape:", v_gt.shape)
-            v_imu_gt = torch.einsum('bij,bj->bi', Rot_T, v_gt)
-            #
-            # # 合并 ts 和变换后的 v_gt_transformed
-            # combined_data = torch.cat((torch.from_numpy(ts).unsqueeze(1), v_imu_gt), dim=1)
-            # combined_data_np = combined_data.numpy()
-            # np.savetxt(self.predata_dir + sequence + '_gt_v.csv', combined_data.numpy(), fmt='%.6f', delimiter=',')
-
-            # save for training
-            mondict = {
-                'xs': v_imu_gt.float(),
                 'us': imu.float(),
             }
             pdump(mondict, self.predata_dir, sequence + ".p")

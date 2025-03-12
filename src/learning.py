@@ -829,7 +829,7 @@ class HcProcessing(BaseProcessing):
 
         # training loop !
         for epoch in range(1, n_epochs + 1):
-            loss_epoch = self.loop_train(dataloader, optimizer, criterion)
+            loss_epoch = self.loop_train(dataloader, optimizer, criterion, epoch)
             write(epoch, loss_epoch)
             scheduler.step(epoch)
             if epoch % freq_val == 0:
@@ -851,15 +851,15 @@ class HcProcessing(BaseProcessing):
         ydump(dict_loss, self.address, 'final_loss.yaml')
         writer.close()
 
-    def loop_train(self, dataloader, optimizer, criterion):
+    def loop_train(self, dataloader, optimizer, criterion, epoch):
         """Forward-backward loop over training data"""
         loss_epoch = 0
         optimizer.zero_grad()
         for us, targ in dataloader:
-            print(us.shape)
-            us = dataloader.dataset.add_noise(us.cuda())
+            # print(us.shape) #在__getitem__中us.shape = torch.Size([29290, 6])，这里的us.shape=torch.Size([1, 29290, 6]),会叠加batch_size，这里batch_size是1
+            # us = dataloader.dataset.add_noise(us.cuda())
             pred, pred_cov = self.net.model(us) #网络预测的速度及其对应的方差
-            loss = criterion.get_loss(pred, pred_cov, targ, epoch).to(device) #target是acc的真值
+            loss = criterion.get_loss(pred, pred_cov, targ, epoch)
             loss.backward()
             loss_epoch += loss.detach().cpu()
         optimizer.step()
